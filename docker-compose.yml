@@ -1,0 +1,17 @@
+services:
+  # ── Your FastAPI app ─────────────────────────────────────────────
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Qdrant & Redis use your cloud URLs from .env (no override needed)
+      CORS_ORIGINS: "*"
+    volumes:
+      - app-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  app-data:
