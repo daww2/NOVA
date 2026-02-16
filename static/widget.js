@@ -23,6 +23,11 @@
   function renderMarkdown(raw) {
     // Escape HTML first
     var text = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // Headings: #### / ### / ## / # (must be before line break conversion)
+    text = text.replace(/(^|\n)#### (.+?)(\n|$)/g, "$1<strong style=\"font-size:14px\">$2</strong>$3");
+    text = text.replace(/(^|\n)### (.+?)(\n|$)/g, "$1<strong style=\"font-size:15px\">$2</strong>$3");
+    text = text.replace(/(^|\n)## (.+?)(\n|$)/g, "$1<strong style=\"font-size:16px\">$2</strong>$3");
+    text = text.replace(/(^|\n)# (.+?)(\n|$)/g, "$1<strong style=\"font-size:18px\">$2</strong>$3");
     // Bold: **text**
     text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     // Italic: *text* (but not inside **)
@@ -82,6 +87,7 @@
   const ICON_SPARKLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/><path d="M19 15l.5 1.5L21 17l-1.5.5L19 19l-.5-1.5L17 17l1.5-.5L19 15z"/><path d="M5 17l.5 1.5L7 19l-1.5.5L5 21l-.5-1.5L3 19l1.5-.5L5 17z"/></svg>';
   const ICON_SPARKLE_SM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="rag-bot-label-icon"><path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z"/><path d="M19 15l.5 1.5L21 17l-1.5.5L19 19l-.5-1.5L17 17l1.5-.5L19 15z"/><path d="M5 17l.5 1.5L7 19l-1.5.5L5 21l-.5-1.5L3 19l1.5-.5L5 17z"/></svg>';
   const ICON_CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  const ICON_NEW_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
   const ICON_SEND = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
   const ICON_ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>';
 
@@ -168,13 +174,16 @@
       #rag-widget-header-title {
         font-size: 16px; font-weight: 700; color: #1a1a1a;
       }
-      #rag-widget-close {
+      #rag-widget-header-actions {
+        display: flex; align-items: center; gap: 4px;
+      }
+      #rag-widget-new-chat, #rag-widget-close {
         background: none; border: none; color: #888;
         cursor: pointer; padding: 4px; border-radius: 6px; display: flex;
         transition: color .2s, background .2s;
       }
-      #rag-widget-close:hover { color: #333; background: #f5f5f5; }
-      #rag-widget-close svg { width: 22px; height: 22px; }
+      #rag-widget-new-chat:hover, #rag-widget-close:hover { color: #333; background: #f5f5f5; }
+      #rag-widget-new-chat svg, #rag-widget-close svg { width: 22px; height: 22px; }
 
       /* ── Welcome Screen ────────────────────────── */
       #rag-widget-welcome {
@@ -354,7 +363,10 @@
       <div id="rag-widget-window">
         <div id="rag-widget-header">
           <span id="rag-widget-header-title">${cfg.title}</span>
-          <button id="rag-widget-close" aria-label="Close chat">${ICON_CHEVRON}</button>
+          <div id="rag-widget-header-actions">
+            <button id="rag-widget-new-chat" aria-label="New chat" title="New chat">${ICON_NEW_CHAT}</button>
+            <button id="rag-widget-close" aria-label="Close chat">${ICON_CHEVRON}</button>
+          </div>
         </div>
 
         <div id="rag-widget-welcome">
@@ -409,6 +421,7 @@
     const input = document.getElementById("rag-widget-input");
     const sendBtn = document.getElementById("rag-widget-send");
     const suggestionsEl = document.getElementById("rag-widget-suggestions");
+    const newChatBtn = document.getElementById("rag-widget-new-chat");
 
     let isOpen = false;
     let sessionId = null;
@@ -422,6 +435,17 @@
     }
     bubble.addEventListener("click", toggle);
     closeBtn.addEventListener("click", toggle);
+
+    // New chat: clear messages, reset session, show welcome screen
+    newChatBtn.addEventListener("click", function () {
+      if (isStreaming) return;
+      messages.innerHTML = "";
+      sessionId = null;
+      clearHistory();
+      win.classList.remove("chatting");
+      input.value = "";
+      input.style.height = "auto";
+    });
 
     // Suggestion chip clicks
     suggestionsEl.querySelectorAll(".rag-suggestion-item").forEach(function (btn) {
