@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # Ensure project root is on sys.path so `from src.` and `from api.` imports work
@@ -170,6 +170,12 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 
 # --- Mount API router ---
 app.include_router(v1_router, prefix=settings.api_prefix)
+
+
+# --- Root route: serve the website ---
+@app.get("/")
+async def root():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "test-website.html"))
 
 
 # --- Global exception handler ---
