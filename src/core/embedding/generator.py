@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from openai import AsyncOpenAI
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
 
 from src.config import settings
 from ..caching.embedding_cache import EmbeddingCache
@@ -84,48 +84,48 @@ class OpenAIEmbeddingClient:
         sorted_data = sorted(response.data, key=lambda x: x.index)
         return [item.embedding for item in sorted_data]
 
-class HuggingFaceEmbeddingClient:
-    """HuggingFace/local model embedding client."""
+# class HuggingFaceEmbeddingClient:
+#     """HuggingFace/local model embedding client."""
     
-    def __init__(self, device: str = "cpu"):
-        self.device = device
-        self._model = None
-        self._tokenizer = None
+#     def __init__(self, device: str = "cpu"):
+#         self.device = device
+#         self._model = None
+#         self._tokenizer = None
         
         
-    async def _load_model(self, model: EmbeddingModel):
-        """Lazy load model and tokenizer."""
-        if self._model is None:
-            try:
-                self._model = SentenceTransformer(
-                    model.name,
-                    device=self.device
-                )
-            except ImportError:
-                raise ImportError(
-                    "sentence-transformers required: pip install sentence-transformers"
-                )
+#     async def _load_model(self, model: EmbeddingModel):
+#         """Lazy load model and tokenizer."""
+#         if self._model is None:
+#             try:
+#                 self._model = SentenceTransformer(
+#                     model.name,
+#                     device=self.device
+#                 )
+#             except ImportError:
+#                 raise ImportError(
+#                     "sentence-transformers required: pip install sentence-transformers"
+#                 )
     
-    async def embed(
-        self,
-        texts: list[str],
-        model: EmbeddingModel,
-    ) -> list[list[float]]:
-        """Generate embeddings using local HuggingFace model."""
-        await self._load_model(model)
+#     async def embed(
+#         self,
+#         texts: list[str],
+#         model: EmbeddingModel,
+#     ) -> list[list[float]]:
+#         """Generate embeddings using local HuggingFace model."""
+#         await self._load_model(model)
         
-        # Run in executor to avoid blocking 
-        loop = asyncio.get_event_loop()
-        embeddings = await loop.run_in_executor(
-            None,
-            lambda: self._model.encode(
-                texts,
-                normalize_embeddings=model.normalize_embeddings,
-                convert_to_numpy=True,
-            ).tolist()
-        )
+#         # Run in executor to avoid blocking 
+#         loop = asyncio.get_event_loop()
+#         embeddings = await loop.run_in_executor(
+#             None,
+#             lambda: self._model.encode(
+#                 texts,
+#                 normalize_embeddings=model.normalize_embeddings,
+#                 convert_to_numpy=True,
+#             ).tolist()
+#         )
         
-        return embeddings
+#         return embeddings
     
     
 class EmbeddingGenerator:
@@ -217,7 +217,7 @@ class EmbeddingGenerator:
             )
 
         # Initialize OpenAI client
-        self._client = HuggingFaceEmbeddingClient()
+        self._client = OpenAIEmbeddingClient()
 
         logger.info(
             f"Initialized EmbeddingGenerator: model={self.model.model_id}, "
