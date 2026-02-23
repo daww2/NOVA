@@ -28,7 +28,7 @@ def build_prompt(query: str, context: str, history: list[dict] | None = None) ->
 
     if history:
         lines = [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in history]
-        parts.append(f"Conversation:\n" + "\n".join(lines))
+        parts.append("Conversation:\n" + "\n".join(lines))
 
     parts.append(f"Question:\n{query}")
 
