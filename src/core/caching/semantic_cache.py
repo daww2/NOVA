@@ -18,7 +18,6 @@ from typing import Optional
 
 import numpy as np
 import redis
-from sentence_transformers import CrossEncoder
 
 from src.config import settings
 from src.core.embedding.generator import create_embedding_generator
@@ -94,14 +93,8 @@ class SemanticCache:
         self._memory_cache: dict[str, CacheEntry] = {}
         self._embeddings: list[tuple[str, np.ndarray]] = []
 
-        # Layer 3: Cross-encoder
-        try:
-            model_name = settings.cache.cross_encoder_model
-            self.reranker = CrossEncoder(model_name)
-            logger.info("Loaded cross-encoder: %s", model_name)
-        except Exception as e:
-            logger.warning("Cross-encoder failed to load (%s) — Layer 3 disabled", e)
-            self.reranker = None
+        # Layer 3: Cross-encoder (disabled — torch removed)
+        self.reranker = None
 
         # Stats
         self._stats = {"hits_exact": 0, "hits_semantic": 0, "misses": 0}
