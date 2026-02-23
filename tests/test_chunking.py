@@ -1,7 +1,7 @@
 """Tests for Chunker — text splitting strategies."""
 
 import pytest
-from src.core.chunking.strategies import Chunker, Chunk, ChunkingStrategy
+from src.core.chunking.strategies import Chunker, Chunk
 
 
 @pytest.fixture

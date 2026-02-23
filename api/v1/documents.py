@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
 from src.services.vector_store.qdrant import QdrantStore
 from src.core.embedding.generator import EmbeddingGenerator
 from src.core.retrieval.bm25_search import BM25Search
-from src.core.chunking.strategies import Chunker, ChunkingStrategy, get_chunker as create_chunker
+from src.core.chunking.strategies import Chunker, get_chunker as create_chunker
 from src.services.document_processor import DocumentProcessor
 
 from api.v1.schemas import (

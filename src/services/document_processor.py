@@ -12,10 +12,8 @@ Uses:
 """
 
 import logging
-import mimetypes       # guess a file’s type (like PDF, HTML, image, etc.) based on the file name or extension.
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 import pandas as pd
 
 from pypdf import PdfReader

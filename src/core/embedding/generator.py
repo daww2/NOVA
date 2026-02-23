@@ -26,7 +26,7 @@ from openai import AsyncOpenAI
 
 from src.config import settings
 from ..caching.embedding_cache import EmbeddingCache
-from .models import EmbeddingModel, get_embedding_model, DEFAULT_MODEL
+from .models import EmbeddingModel, get_embedding_model
 
 logger = logging.getLogger(__name__)
 

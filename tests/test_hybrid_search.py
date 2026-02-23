@@ -1,6 +1,5 @@
 """Tests for HybridSearch — RRF fusion logic."""
 
-import math
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 

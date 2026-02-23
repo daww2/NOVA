@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+  "E501",   # line too long (handled by formatter if needed)
+  "F401",   # unused import (too noisy during development)
+  "E402",   # module-level import not at top of file
+  "F601",   # dictionary key repeated (false positive on unicode quotes)
+  "F841",   # local variable assigned but never used
+  "E741",   # ambiguous variable name
+  "W291",   # trailing whitespace
+  "W292",   # no newline at end of file
+  "W293",   # whitespace before ':'
+]
