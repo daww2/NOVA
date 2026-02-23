@@ -117,12 +117,12 @@ class SemanticCache:
             "yes" if self.reranker else "no",
         )
 
-    async def get(self, query: str) -> CacheResult:
+    async def get(self, query: str, metadata: Optional[dict] = None) -> CacheResult:
         """Look up query in cache (3 layers)."""
         start = time.perf_counter()
 
         # Layer 1: Exact match
-        exact_result = self._exact_match(query)
+        exact_result = self._exact_match(query, metadata)
         if exact_result:
             self._stats["hits_exact"] += 1
             return CacheResult(
@@ -135,7 +135,7 @@ class SemanticCache:
 
         # Layer 2: Semantic similarity
         query_embedding = np.array(await self._embed_func(query))
-        semantic_result = self._semantic_match(query, query_embedding)
+        semantic_result = self._semantic_match(query, query_embedding, metadata)
 
         if semantic_result:
             self._stats["hits_semantic"] += 1
@@ -155,7 +155,7 @@ class SemanticCache:
         if not response or not response.strip():
             return
 
-        query_hash = self._hash_query(query)
+        query_hash = self._hash_query(query, metadata)
 
         try:
             embedding = await self._embed_func(query)
@@ -183,9 +183,9 @@ class SemanticCache:
 
     # --- Layer 1: Exact match ---
 
-    def _exact_match(self, query: str) -> Optional[str]:
+    def _exact_match(self, query: str, metadata: Optional[dict] = None) -> Optional[str]:
         """Hash-based exact match."""
-        query_hash = self._hash_query(query)
+        query_hash = self._hash_query(query, metadata)
 
         # Check Redis first
         if self._using_redis:
@@ -212,9 +212,9 @@ class SemanticCache:
 
     # --- Layer 2 + 3: Semantic match ---
 
-    def _semantic_match(self, query: str, query_embedding: np.ndarray) -> Optional[dict]:
+    def _semantic_match(self, query: str, query_embedding: np.ndarray, metadata: Optional[dict] = None) -> Optional[dict]:
         """Semantic similarity with cross-encoder validation."""
-        candidates = self._find_similar(query_embedding)
+        candidates = self._find_similar(query_embedding, metadata=metadata)
         if not candidates:
             return None
 
@@ -233,8 +233,23 @@ class SemanticCache:
 
         return best
 
-    def _find_similar(self, query_embedding: np.ndarray, top_k: int = 5) -> list[dict]:
-        """Find similar queries using cosine similarity."""
+    def _find_similar(self, query_embedding: np.ndarray, top_k: int = 5, metadata: Optional[dict] = None) -> list[dict]:
+        """Find similar queries using cosine similarity.
+
+        If `metadata` is provided, only consider cached entries that match
+        session/conversation identifiers to avoid returning generic short
+        replies (e.g. "yes please") across unrelated contexts.
+        """
+        def _metadata_match(entry_meta: dict, lookup_meta: Optional[dict]) -> bool:
+            if lookup_meta is None:
+                return True
+            if not entry_meta:
+                return False
+            for key in ("session_id", "conversation_id", "user_id", "conversation_hash"):
+                if key in lookup_meta and key in entry_meta and lookup_meta[key] == entry_meta[key]:
+                    return True
+            return False
+
         if not self._embeddings:
             return []
 
@@ -253,14 +268,36 @@ class SemanticCache:
         for key, sim in similarities[:top_k]:
             if key in self._memory_cache:
                 entry = self._memory_cache[key]
+                if not _metadata_match(entry.metadata, metadata):
+                    continue
                 if entry.response and entry.response.strip():
                     results.append({"query": entry.query, "response": entry.response, "similarity": sim})
         return results
 
     # --- Storage ---
 
-    def _hash_query(self, query: str) -> str:
+    def _hash_query(self, query: str, metadata: Optional[dict] = None) -> str:
+        """Hash the query text together with optional identifying metadata.
+
+        If metadata contains session/conversation identifiers (e.g.
+        `session_id` or `conversation_id`), include them so cached short
+        replies won't collide across different conversations.
+        """
         normalized = query.lower().strip()
+        if metadata:
+            # Prefer explicit conversation identifiers if present
+            for key in ("session_id", "conversation_id", "user_id", "conversation_hash"):
+                if key in metadata:
+                    normalized = f"{normalized}|{key}:{metadata[key]}"
+                    break
+            else:
+                # Fallback: include a stable JSON representation
+                try:
+                    meta_str = json.dumps(metadata, sort_keys=True)
+                    normalized = f"{normalized}|meta:{meta_str}"
+                except Exception:
+                    pass
+
         return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
     def _memory_set(self, key: str, entry: CacheEntry) -> None:
