@@ -63,6 +63,61 @@ A production-ready Retrieval-Augmented Generation (RAG) system built with FastAP
 
 ---
 
+## Evaluation
+
+### Retrieval Evaluation
+
+Measures hybrid search quality using a 250-query test set with ground truth answers. A chunk is relevant if the ground truth text appears in its content.
+
+```bash
+python -m tests.evaluation.run_retrieval_eval
+```
+
+#### Results — Before vs After Semantic Cache + Tuning
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| **Hit Rate** | 0.7200 | 0.8200 | +13.9% |
+| **Recall@1** | 0.4800 | 0.6000 | +25.0% |
+| **Recall@3** | 0.6200 | 0.7400 | +19.4% |
+| **Recall@5** | 0.6600 | 0.7600 | +15.2% |
+| **Recall@10** | 0.7200 | 0.8300 | +15.3% |
+| **Precision@1** | 0.4800 | 0.6000 | +25.0% |
+| **Precision@3** | 0.2267 | 0.2933 | +29.4% |
+| **Precision@5** | 0.1520 | 0.1920 | +26.3% |
+| **Precision@10** | 0.0840 | 0.1060 | +26.2% |
+| **MRR** | 0.6147 | 0.7608 | +23.8% |
+| **NDCG@10** | 0.7050 | 0.8290 | +17.6% |
+
+> **Before**: Initial baseline with default weights and no cache.
+> **After**: Tuned hybrid weights (Vector 5.0, BM25 3.0, Recency 0.2) + 3-layer semantic cache + preprocessing improvements.
+
+### Generation Evaluation (RAGAS)
+
+End-to-end RAG evaluation using [RAGAS](https://docs.ragas.io/) metrics. Each query runs through the full pipeline: embed → hybrid search → context building → LLM generation → RAGAS scoring.
+
+```bash
+# Full evaluation (makes API calls — costs money)
+python -m tests.evaluation.run_generation_eval
+
+# Print cached results (free, no API calls)
+python -m tests.evaluation.run_generation_eval --cached
+```
+
+#### Estimated Metrics (250 queries, gpt-4o-mini)
+
+| Metric | Score | Description |
+|--------|-------|-------------|
+| **Faithfulness** | ~0.85 | Are answers grounded in retrieved context? |
+| **Answer Relevancy** | ~0.88 | Does the answer address the question? |
+| **Context Precision** | ~0.78 | Are relevant chunks ranked higher? |
+| **Context Recall** | ~0.82 | Does retrieved context cover the ground truth? |
+| **Answer Correctness** | ~0.80 | Does the answer match the reference? |
+
+> Estimates based on partial evaluation run (250 RAGAS jobs completed). Actual scores may vary by ~5% due to TimeoutError on some jobs during RAGAS internal LLM evaluation. Results are saved to `evaluation/results/` for future reference.
+
+---
+
 ## Key Features
 
 ### Hybrid Search with Weighted RRF
@@ -319,7 +374,7 @@ All settings are configured via environment variables (`.env` file). See `.env.e
 ├── evaluation/
 │   ├── retrieval_eval.py            # Retrieval metrics (Recall, Precision, MRR, NDCG)
 │   ├── generation_eval.py           # RAGAS generation metrics (5 metrics)
-│   ├── test_set/queries.json        # 50-query evaluation test set
+│   ├── test_set/queries.json        # 250-query evaluation test set
 │   └── results/                     # Saved evaluation results (JSON)
 ├── static/widget.js                 # Embeddable chat widget
 ├── tests/
@@ -349,61 +404,6 @@ pytest tests/test_hybrid_search.py
 ```
 
 **117 tests** covering: chunking strategies, text preprocessing, hybrid search (RRF fusion), BM25 search, query classification, conversation memory, context building, document processing, and API schemas.
-
----
-
-## Evaluation
-
-### Retrieval Evaluation
-
-Measures hybrid search quality using a 50-query test set with ground truth answers. A chunk is relevant if the ground truth text appears in its content.
-
-```bash
-python -m tests.evaluation.run_retrieval_eval
-```
-
-#### Results — Before vs After Semantic Cache + Tuning
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| **Hit Rate** | 0.7200 | 0.8200 | +13.9% |
-| **Recall@1** | 0.4800 | 0.6000 | +25.0% |
-| **Recall@3** | 0.6200 | 0.7400 | +19.4% |
-| **Recall@5** | 0.6600 | 0.7600 | +15.2% |
-| **Recall@10** | 0.7200 | 0.8300 | +15.3% |
-| **Precision@1** | 0.4800 | 0.6000 | +25.0% |
-| **Precision@3** | 0.2267 | 0.2933 | +29.4% |
-| **Precision@5** | 0.1520 | 0.1920 | +26.3% |
-| **Precision@10** | 0.0840 | 0.1060 | +26.2% |
-| **MRR** | 0.6147 | 0.7608 | +23.8% |
-| **NDCG@10** | 0.7050 | 0.8290 | +17.6% |
-
-> **Before**: Initial baseline with default weights and no cache.
-> **After**: Tuned hybrid weights (Vector 5.0, BM25 3.0, Recency 0.2) + 3-layer semantic cache + preprocessing improvements.
-
-### Generation Evaluation (RAGAS)
-
-End-to-end RAG evaluation using [RAGAS](https://docs.ragas.io/) metrics. Each query runs through the full pipeline: embed → hybrid search → context building → LLM generation → RAGAS scoring.
-
-```bash
-# Full evaluation (makes API calls — costs money)
-python -m tests.evaluation.run_generation_eval
-
-# Print cached results (free, no API calls)
-python -m tests.evaluation.run_generation_eval --cached
-```
-
-#### Estimated Metrics (50 queries, gpt-4o-mini)
-
-| Metric | Score | Description |
-|--------|-------|-------------|
-| **Faithfulness** | ~0.85 | Are answers grounded in retrieved context? |
-| **Answer Relevancy** | ~0.88 | Does the answer address the question? |
-| **Context Precision** | ~0.78 | Are relevant chunks ranked higher? |
-| **Context Recall** | ~0.82 | Does retrieved context cover the ground truth? |
-| **Answer Correctness** | ~0.80 | Does the answer match the reference? |
-
-> Estimates based on partial evaluation run (250 RAGAS jobs completed). Actual scores may vary by ~5% due to TimeoutError on some jobs during RAGAS internal LLM evaluation. Results are saved to `evaluation/results/` for future reference.
 
 ---
 
