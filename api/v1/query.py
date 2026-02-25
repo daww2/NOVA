@@ -64,7 +64,6 @@ async def query(
     """
     start = time.time()
     session_id = request.session_id or str(uuid.uuid4())
-    cache_meta = {"session_id": session_id}
     MIN_CACHE_WORDS = 4  # Skip caching short/vague queries like "yes", "ok", "where"
 
     # 1. Classify
@@ -97,7 +96,7 @@ async def query(
 
     cacheable = len(request.query.split()) >= MIN_CACHE_WORDS
     if semantic_cache and cacheable:
-        cache_result = await semantic_cache.get(request.query, metadata=cache_meta)
+        cache_result = await semantic_cache.get(request.query)
         if cache_result.hit:
             logger.info(
                 f"Cache hit ({cache_result.layer}, sim={cache_result.similarity:.3f}, "
@@ -144,7 +143,7 @@ async def query(
 
             # Cache the response (skip short queries)
             if semantic_cache and cacheable:
-                await semantic_cache.set(request.query, full_answer, metadata=cache_meta)
+                await semantic_cache.set(request.query, full_answer)
 
             yield _sse_event("done", {
                 "model": llm_client.model,
@@ -230,7 +229,7 @@ async def query(
 
         # Cache the response (skip short queries)
         if semantic_cache and cacheable:
-            await semantic_cache.set(request.query, full_answer, metadata=cache_meta)
+            await semantic_cache.set(request.query, full_answer)
 
         yield _sse_event("done", {
             "model": llm_client.model,
