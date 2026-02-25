@@ -5,10 +5,9 @@ FOCUS: PDF, DOCX, TXT, CSV processing
 MUST: Extract text, preserve structure
 
 Uses:
-- pypdf: PDF extraction
+- pdfplumber: PDF text + table extraction
 - python-docx: Word documents
 - pandas: CSV/Excel
-- unstructured: Complex documents (optional)
 """
 
 import logging
@@ -16,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import pandas as pd
 
-from pypdf import PdfReader
+import pdfplumber
 from docx import Document
 from bs4 import BeautifulSoup   # Read HTML like a tree instead of raw text
 
@@ -97,16 +96,53 @@ class DocumentProcessor:
         )
         
     def _extract_pdf(self, path: Path) -> tuple[str, int]:
-        """Extract text from PDF using pypdf."""
-        
-        reader = PdfReader(path)
+        """Extract text and tables from PDF using pdfplumber."""
+
         pages = []
-        
-        for page in reader.pages:
-            text = page.extract_text() or "" 
-            pages.append(text)
-            
-        return "\n\n".join(pages), len(reader.pages)
+
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                page_parts: list[str] = []
+
+                # Extract tables first so we can exclude their bboxes from text
+                tables = page.find_tables()
+                table_bboxes = [t.bbox for t in tables]
+
+                # Extract text outside tables
+                if table_bboxes:
+                    # Crop page to exclude table regions and extract remaining text
+                    filtered = page.filter(
+                        lambda obj: not any(
+                            bbox[0] <= obj.get("x0", 0) <= bbox[2]
+                            and bbox[1] <= obj.get("top", 0) <= bbox[3]
+                            for bbox in table_bboxes
+                        )
+                    )
+                    text = filtered.extract_text() or ""
+                else:
+                    text = page.extract_text() or ""
+
+                if text.strip():
+                    page_parts.append(text.strip())
+
+                # Extract each table as a markdown-style table
+                for table in tables:
+                    rows = table.extract()
+                    if not rows:
+                        continue
+                    md_rows = []
+                    for i, row in enumerate(rows):
+                        cells = [str(c).strip() if c else "" for c in row]
+                        md_rows.append("| " + " | ".join(cells) + " |")
+                        if i == 0:
+                            md_rows.append("| " + " | ".join("---" for _ in cells) + " |")
+                    page_parts.append("\n".join(md_rows))
+
+                pages.append("\n\n".join(page_parts))
+
+            page_count = len(pdf.pages)
+
+        return "\f".join(pages), page_count
     
     def _extract_docx(self, path: Path) -> tuple[str, int]:
         """Extract text from Word document."""
