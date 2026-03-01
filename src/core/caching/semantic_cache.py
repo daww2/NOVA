@@ -65,7 +65,7 @@ class SemanticCache:
         await cache.set(query, response)
     """
 
-    def __init__(self):
+    def __init__(self, embedding_generator=None):
         # Config
         self.similarity_threshold = settings.cache.semantic_cache_threshold
         self.rerank_threshold = settings.cache.rerank_threshold
@@ -73,8 +73,8 @@ class SemanticCache:
         self.max_size = settings.cache.semantic_cache_max_size
         self.prefix = "sem_cache"
 
-        # Embedding function
-        self._embedding_generator = create_embedding_generator()
+        # Embedding function (reuse existing generator to share connection pool)
+        self._embedding_generator = embedding_generator or create_embedding_generator()
         self._embed_func = self._embedding_generator.embed_query
 
         # Redis (default) with RAM fallback

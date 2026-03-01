@@ -49,6 +49,7 @@ class VectorSearch:
         port: int = 6333,
         url: Optional[str] = None,
         api_key: Optional[str] = None,
+        client: Optional[QdrantClient] = None,
     ):
         """
         Args:
@@ -58,15 +59,26 @@ class VectorSearch:
             port: Qdrant port (for local)
             url: Qdrant Cloud URL (if using cloud)
             api_key: Qdrant API key (if using cloud)
+            client: Existing QdrantClient to reuse (avoids duplicate connections)
         """
         self.collection_name = collection_name
         self.dimensions = dimensions
 
-        # Connect to Qdrant
-        if url:
-            self._client = QdrantClient(url=url, api_key=api_key)
+        if client:
+            # Reuse existing client (shared connection pool)
+            self._client = client
+        elif url and "cloud.qdrant.io" in url:
+            self._client = QdrantClient(
+                url=url,
+                api_key=api_key,
+                https=True,
+                port=443,
+                timeout=60,
+            )
+        elif url:
+            self._client = QdrantClient(url=url, api_key=api_key, timeout=60)
         else:
-            self._client = QdrantClient(host=host, port=port)
+            self._client = QdrantClient(host=host, port=port, timeout=60)
 
         self._ensure_collection()
 

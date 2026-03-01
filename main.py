@@ -65,12 +65,11 @@ async def lifespan(app: FastAPI):
     # --- Embedding Generator ---
     embedding_generator = create_embedding_generator()
 
-    # --- Vector Search (for HybridSearch) ---
+    # --- Vector Search (reuse Qdrant client — shared connection pool) ---
     vector_search = VectorSearch(
         collection_name=settings.qdrant.qdrant_collection,
         dimensions=settings.embedding.dimensions,
-        url=settings.qdrant.qdrant_url,
-        api_key=settings.qdrant.qdrant_api_key,
+        client=qdrant_store.client,
     )
 
     # --- BM25 Search ---
@@ -120,10 +119,10 @@ async def lifespan(app: FastAPI):
     # --- Conversation Memory ---
     conversation_memory = ConversationMemory()
 
-    # --- Semantic Cache ---
+    # --- Semantic Cache (shares embedding generator's OpenAI connection) ---
     semantic_cache = None
     if settings.cache.semantic_cache_enabled:
-        semantic_cache = SemanticCache()
+        semantic_cache = SemanticCache(embedding_generator=embedding_generator)
         logger.info("Semantic cache enabled")
 
     # --- Upload directory ---

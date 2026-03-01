@@ -69,10 +69,14 @@ class LLMClient:
     ):
         self.model = model
         self.max_retries = max_retries
+        import httpx
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=timeout,
+            http_client=httpx.AsyncClient(
+                limits=httpx.Limits(keepalive_expiry=None),
+                timeout=httpx.Timeout(timeout, connect=10.0),
+            ),
         )
 
     async def generate(

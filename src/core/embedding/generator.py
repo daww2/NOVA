@@ -55,16 +55,22 @@ class EmbeddingResult:
 
 
 class OpenAIEmbeddingClient:
-    """OpenAI embedding API client."""
+    """OpenAI embedding API client with persistent connection pooling."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self._client: Optional[AsyncOpenAI] = None
 
     async def _get_client(self) -> AsyncOpenAI:
-        """Lazy initialization of OpenAI client."""
+        """Lazy initialization of OpenAI client with persistent connections."""
         if self._client is None:
-            self._client = AsyncOpenAI(api_key=self.api_key)
+            import httpx
+            self._client = AsyncOpenAI(
+                api_key=self.api_key,
+                http_client=httpx.AsyncClient(
+                    limits=httpx.Limits(keepalive_expiry=None),
+                ),
+            )
         return self._client
 
     async def embed(
