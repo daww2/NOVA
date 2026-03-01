@@ -52,5 +52,7 @@ redis==5.0.3
 # =========================
 # Monitoring / Tracing / Eval
 # =========================
+langfuse>=2.0.0
+prometheus-client>=0.20.0
 ragas>=0.1.7
 datasets==4.5.0

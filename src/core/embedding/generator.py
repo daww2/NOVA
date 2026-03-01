@@ -25,6 +25,8 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from src.config import settings
+from src.core.observability.tracing import observe
+from src.core.observability.metrics import METRICS
 from ..caching.embedding_cache import EmbeddingCache
 from .models import EmbeddingModel, get_embedding_model
 
@@ -106,32 +108,6 @@ class EmbeddingGenerator:
         max_retries: Optional[int] = None,
         retry_delay: float = 1.0,
     ):
-        """
-        Initialize embedding generator.
-
-        Uses unified EmbeddingCache from core.caching.embedding_cache.
-        Supports both Redis (persistent) and in-memory caching.
-
-        Args:
-            model_key: Model identifier from supported models (defaults to config)
-            cache: Optional EmbeddingCache instance (Redis or in-memory)
-                   If None and caching enabled, creates in-memory cache
-            enable_cache: Whether to use caching (defaults to config)
-            batch_size: Override default batch size (defaults to config)
-            max_retries: Maximum retry attempts (defaults to config)
-            retry_delay: Initial retry delay in seconds
-
-        Example:
-            # In-memory cache for initial ingestion
-            generator = EmbeddingGenerator()  # Auto-creates in-memory cache
-
-            # Redis cache for production
-            from core.caching.embedding_cache import EmbeddingCache
-            import redis
-            redis_client = redis.Redis(host='localhost', port=6379)
-            cache = EmbeddingCache(redis_client=redis_client)
-            generator = EmbeddingGenerator(cache=cache)
-        """
         # Use config defaults if not specified
         if model_key is None:
             model_key = getattr(settings.embedding, 'model_key', None)
@@ -172,8 +148,8 @@ class EmbeddingGenerator:
                 prefix="emb_cache"
             )
 
-        # Initialize OpenAI client
-        self._client = OpenAIEmbeddingClient()
+        # Initialize OpenAI client (pass key from config so .env is picked up)
+        self._client = OpenAIEmbeddingClient(api_key=settings.llm.api_key)
 
         logger.info(
             f"Initialized EmbeddingGenerator: model={self.model.model_id}, "
@@ -204,6 +180,7 @@ class EmbeddingGenerator:
         model_hash = hashlib.sha256(self.model_id.encode()).hexdigest()[:8]
         return f"{model_hash}:{content_hash}"
 
+    @observe(capture_input=False, capture_output=False)
     async def embed_texts(
         self,
         texts: list[str],
@@ -277,6 +254,9 @@ class EmbeddingGenerator:
 
         latency_ms = (time.time() - start_time) * 1000
 
+        # Prometheus: record embedding latency
+        METRICS.EMBEDDING_DURATION.observe(latency_ms / 1000)
+
         # Estimate cost
         total_tokens = sum(len(text.split()) for text in texts)  # Approximate
         estimated_cost = (total_tokens / 1_000_000) * self.model.cost_per_million_tokens
@@ -334,6 +314,7 @@ class EmbeddingGenerator:
                 return await self._client.embed(texts, self.model)
             except Exception as e:
                 last_error = e
+                METRICS.ERRORS_TOTAL.labels(component="embedding").inc()
                 logger.warning(
                     f"Embedding attempt {attempt + 1} failed: {e}. "
                     f"Retrying in {delay}s..."
@@ -345,6 +326,7 @@ class EmbeddingGenerator:
             f"Failed to generate embeddings after {self.max_retries} attempts: {last_error}"
         )
 
+    @observe(capture_input=False, capture_output=False)
     async def embed_query(self, query: str) -> list[float]:
         """
         Embed a single query text.

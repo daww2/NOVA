@@ -21,6 +21,8 @@ import redis
 
 from src.config import settings
 from src.core.embedding.generator import create_embedding_generator
+from src.core.observability.tracing import observe
+from src.core.observability.metrics import METRICS
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,7 @@ class CacheResult:
     layer: Optional[str] = None  # "exact", "semantic", None
     similarity: float = 0.0
     latency_ms: float = 0.0
+    query_embedding: Optional[list[float]] = None  # reuse on cache miss
 
 
 class SemanticCache:
@@ -110,6 +113,7 @@ class SemanticCache:
             "yes" if self.reranker else "no",
         )
 
+    @observe(capture_input=False)
     async def get(self, query: str, metadata: Optional[dict] = None) -> CacheResult:
         """Look up query in cache (3 layers)."""
         start = time.perf_counter()
@@ -118,12 +122,15 @@ class SemanticCache:
         exact_result = self._exact_match(query, metadata)
         if exact_result:
             self._stats["hits_exact"] += 1
+            METRICS.CACHE_HITS.labels(layer="exact").inc()
+            latency = (time.perf_counter() - start) * 1000
+            METRICS.CACHE_LOOKUP_DURATION.observe(latency / 1000)
             return CacheResult(
                 hit=True,
                 response=exact_result,
                 layer="exact",
                 similarity=1.0,
-                latency_ms=(time.perf_counter() - start) * 1000,
+                latency_ms=latency,
             )
 
         # Layer 2: Semantic similarity
@@ -132,29 +139,50 @@ class SemanticCache:
 
         if semantic_result:
             self._stats["hits_semantic"] += 1
+            METRICS.CACHE_HITS.labels(layer="semantic").inc()
+            latency = (time.perf_counter() - start) * 1000
+            METRICS.CACHE_LOOKUP_DURATION.observe(latency / 1000)
             return CacheResult(
                 hit=True,
                 response=semantic_result["response"],
                 layer="semantic",
                 similarity=semantic_result["similarity"],
-                latency_ms=(time.perf_counter() - start) * 1000,
+                latency_ms=latency,
             )
 
         self._stats["misses"] += 1
-        return CacheResult(hit=False, latency_ms=(time.perf_counter() - start) * 1000)
+        METRICS.CACHE_MISSES.inc()
+        latency = (time.perf_counter() - start) * 1000
+        METRICS.CACHE_LOOKUP_DURATION.observe(latency / 1000)
+        # Return the embedding so the pipeline can reuse it (avoid double embed)
+        return CacheResult(
+            hit=False,
+            latency_ms=latency,
+            query_embedding=query_embedding.tolist(),
+        )
 
-    async def set(self, query: str, response: str, metadata: Optional[dict] = None) -> None:
-        """Cache a query-response pair."""
+    @observe(capture_input=False)
+    async def set(
+        self,
+        query: str,
+        response: str,
+        metadata: Optional[dict] = None,
+        query_embedding: Optional[list[float]] = None,
+    ) -> None:
+        """Cache a query-response pair. Pass query_embedding to skip re-embedding."""
         if not response or not response.strip():
             return
 
         query_hash = self._hash_query(query, metadata)
 
-        try:
-            embedding = await self._embed_func(query)
-        except Exception as e:
-            logger.error("Failed to embed query for caching: %s", e)
-            return
+        if query_embedding is not None:
+            embedding = query_embedding
+        else:
+            try:
+                embedding = await self._embed_func(query)
+            except Exception as e:
+                logger.error("Failed to embed query for caching: %s", e)
+                return
 
         entry = CacheEntry(
             query=query,
@@ -173,6 +201,9 @@ class SemanticCache:
                 self._memory_set(query_hash, entry)
         else:
             self._memory_set(query_hash, entry)
+
+        # Update gauge
+        METRICS.CACHE_ENTRIES.set(len(self._memory_cache))
 
     # --- Layer 1: Exact match ---
 

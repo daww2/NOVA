@@ -27,6 +27,8 @@ from src.core.chunking.strategies import get_chunker
 from src.services.document_processor import DocumentProcessor
 from src.core.memory.conversation import ConversationMemory
 from src.core.caching.semantic_cache import SemanticCache
+from src.core.observability.tracing import langfuse_client, shutdown_langfuse
+from src.core.observability.metrics import METRICS
 
 from api.v1 import v1_router
 
@@ -46,6 +48,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup: create all services. Shutdown: close connections."""
     logger.info("Starting %s v%s (%s)", settings.app_name, settings.app_version, settings.APP_ENV)
+
+    # --- Langfuse ---
+    if langfuse_client:
+        logger.info("Langfuse tracing active")
 
     # --- Qdrant Store ---
     qdrant_store = QdrantStore(
@@ -138,12 +144,19 @@ async def lifespan(app: FastAPI):
     app.state.semantic_cache = semantic_cache
     app.state.upload_dir = upload_dir
 
+    # Set initial gauge values
+    METRICS.BM25_INDEX_SIZE.set(bm25_search.size)
+    METRICS.ACTIVE_SESSIONS.set(0)
+    if semantic_cache:
+        METRICS.CACHE_ENTRIES.set(len(semantic_cache._memory_cache))
+
     logger.info("All services initialized successfully")
 
     yield
 
     # --- Shutdown ---
     logger.info("Shutting down...")
+    shutdown_langfuse()
     await qdrant_store.close()
     await llm_client.close()
     logger.info("Shutdown complete")

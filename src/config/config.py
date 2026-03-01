@@ -193,6 +193,40 @@ class QdrantConfig(BaseSettings):
 
 
 # =============================================================================
+# LANGFUSE
+# =============================================================================
+class LangfuseConfig(BaseSettings):
+    """Langfuse observability settings."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    LANGFUSE_SECRET_KEY: Optional[str] = Field(default=None)
+    LANGFUSE_PUBLIC_KEY: Optional[str] = Field(default=None)
+    LANGFUSE_HOST: str = Field(default="https://cloud.langfuse.com")
+    LANGFUSE_ENABLED: bool = Field(default=True)
+
+    @property
+    def secret_key(self) -> Optional[str]:
+        return self.LANGFUSE_SECRET_KEY
+
+    @property
+    def public_key(self) -> Optional[str]:
+        return self.LANGFUSE_PUBLIC_KEY
+
+    @property
+    def host(self) -> str:
+        return self.LANGFUSE_HOST
+
+    @property
+    def enabled(self) -> bool:
+        return self.LANGFUSE_ENABLED
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.LANGFUSE_SECRET_KEY and self.LANGFUSE_PUBLIC_KEY)
+
+
+# =============================================================================
 # CACHE
 # =============================================================================
 class CacheConfig(BaseSettings):
@@ -274,6 +308,7 @@ class Settings(BaseSettings):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    langfuse: LangfuseConfig = Field(default_factory=LangfuseConfig)
 
     # Paths
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent)
@@ -313,8 +348,12 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list:
         if self.CORS_ORIGINS == "*":
             return ["*"]
-        import json
-        return json.loads(self.CORS_ORIGINS)
+        # Support both JSON arrays and comma-separated strings
+        raw = self.CORS_ORIGINS.strip()
+        if raw.startswith("["):
+            import json
+            return json.loads(raw)
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
     @property
     def is_production(self) -> bool:

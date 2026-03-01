@@ -13,11 +13,14 @@ Pipeline:
 
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
 from src.config import settings
+from src.core.observability.tracing import observe
+from src.core.observability.metrics import METRICS
 from .vector_search import VectorSearch, SearchResult as VectorResult
 from .bm25_search import BM25Search, SearchResult as BM25Result
 
@@ -76,6 +79,7 @@ class HybridSearch:
             self.vector_weight, self.bm25_weight, self.recency_weight,
         )
 
+    @observe(capture_input=False, capture_output=False)
     def search(
         self,
         query: str,
@@ -89,6 +93,8 @@ class HybridSearch:
         Returns:
             List of HybridResult sorted by score, filtered by relevance_threshold.
         """
+        start = time.perf_counter()
+
         # Step 1: Get top candidates from vector search
         vector_results = self.vector_search.search(
             query_embedding=query_embedding,
@@ -107,6 +113,10 @@ class HybridSearch:
 
         # Step 4: Sort and return top_k
         fused.sort(key=lambda x: x.score, reverse=True)
+
+        # Prometheus: record search latency
+        METRICS.SEARCH_DURATION.labels(type="hybrid").observe(time.perf_counter() - start)
+
         return fused[:top_k]
 
     def _rrf_fusion(

@@ -16,6 +16,8 @@ from src.core.generation.prompt_manager import build_prompt
 from src.core.query.classifier import QueryClassifier, QueryRoute
 from src.core.memory.conversation import ConversationMemory
 from src.core.caching.semantic_cache import SemanticCache
+from src.core.observability.tracing import observe
+from src.core.observability.metrics import METRICS
 
 from api.v1.schemas import (
     QueryRequest,
@@ -44,6 +46,7 @@ def _sse_event(event: str, data: dict) -> str:
 
 
 @router.post("")
+@observe()
 async def query(
     request: QueryRequest,
     embedding_gen: EmbeddingGenerator = Depends(get_embedding_generator),
@@ -74,6 +77,8 @@ async def query(
 
     if route == QueryRoute.REJECTION:
         answer = "I'm sorry, I can't help with that request."
+        METRICS.REQUESTS_TOTAL.labels(route="rejection", status="ok").inc()
+        METRICS.REQUEST_DURATION.labels(route="rejection").observe(time.time() - start)
 
         async def rejection_stream():
             yield _sse_event("metadata", {"route": route.value, "session_id": session_id, "sources": []})
@@ -84,6 +89,8 @@ async def query(
 
     if route == QueryRoute.CLARIFICATION:
         answer = classification.follow_up_question or "Could you please provide more details?"
+        METRICS.REQUESTS_TOTAL.labels(route="clarification", status="ok").inc()
+        METRICS.REQUEST_DURATION.labels(route="clarification").observe(time.time() - start)
 
         async def clarification_stream():
             yield _sse_event("metadata", {"route": route.value, "session_id": session_id, "sources": []})
@@ -95,6 +102,7 @@ async def query(
     # ---- Semantic cache check (applies to GENERATION and RETRIEVAL) ----
 
     cacheable = len(request.query.split()) >= MIN_CACHE_WORDS
+    cached_query_embedding = None  # reuse embedding from cache miss
     if semantic_cache and cacheable:
         cache_result = await semantic_cache.get(request.query)
         if cache_result.hit:
@@ -102,6 +110,8 @@ async def query(
                 f"Cache hit ({cache_result.layer}, sim={cache_result.similarity:.3f}, "
                 f"latency={cache_result.latency_ms:.1f}ms): '{request.query[:50]}...'"
             )
+            METRICS.REQUESTS_TOTAL.labels(route=route.value, status="cache_hit").inc()
+            METRICS.REQUEST_DURATION.labels(route=route.value).observe(time.time() - start)
 
             async def cached_stream():
                 yield _sse_event("metadata", {
@@ -118,6 +128,9 @@ async def query(
                 })
 
             return StreamingResponse(cached_stream(), media_type="text/event-stream")
+
+        # Cache miss — save embedding to avoid re-embedding later
+        cached_query_embedding = cache_result.query_embedding
 
     # ---- GENERATION route (LLM-only, no RAG) ----
 
@@ -141,9 +154,12 @@ async def query(
             memory.add(session_id, "user", request.query)
             memory.add(session_id, "assistant", full_answer)
 
-            # Cache the response (skip short queries)
+            # Cache the response (pass embedding to avoid re-embedding)
             if semantic_cache and cacheable:
-                await semantic_cache.set(request.query, full_answer)
+                await semantic_cache.set(request.query, full_answer, query_embedding=cached_query_embedding)
+
+            METRICS.REQUESTS_TOTAL.labels(route="generation", status="ok").inc()
+            METRICS.REQUEST_DURATION.labels(route="generation").observe(time.time() - start)
 
             yield _sse_event("done", {
                 "model": llm_client.model,
@@ -155,8 +171,13 @@ async def query(
 
     # ---- RETRIEVAL route — full RAG pipeline ----
 
-    # Embed query
-    query_embedding = await embedding_gen.embed_query(request.query)
+    # Embed query (reuse from cache lookup if available)
+    if cached_query_embedding:
+        logger.info("Reusing query embedding from cache lookup")
+        query_embedding = cached_query_embedding
+    else:
+        logger.info("No cached embedding — generating new one")
+        query_embedding = await embedding_gen.embed_query(request.query)
 
     # Hybrid search
     search_results = hybrid_search.search(
@@ -227,9 +248,12 @@ async def query(
         memory.add(session_id, "user", request.query)
         memory.add(session_id, "assistant", full_answer)
 
-        # Cache the response (skip short queries)
+        # Cache the response (pass embedding to avoid re-embedding)
         if semantic_cache and cacheable:
-            await semantic_cache.set(request.query, full_answer)
+            await semantic_cache.set(request.query, full_answer, query_embedding=query_embedding)
+
+        METRICS.REQUESTS_TOTAL.labels(route="retrieval", status="ok").inc()
+        METRICS.REQUEST_DURATION.labels(route="retrieval").observe(time.time() - start)
 
         yield _sse_event("done", {
             "model": llm_client.model,

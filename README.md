@@ -118,6 +118,59 @@ python -m tests.evaluation.run_generation_eval --cached
 
 ---
 
+## Observability & Pipeline Optimization
+
+### Instrumentation
+
+Full observability added using **Langfuse** (per-request tracing) and **Prometheus** (aggregate metrics), enabling identification and resolution of latency bottlenecks and redundant API calls across the pipeline.
+
+```
+Trace: POST /api/v1/query
+├── Span: cache_lookup (get)      →  0.65s
+│   └── Span: embed_query        →  0.48s
+├── Span: hybrid_search           →  1.16s
+├── Generation: generate_stream   →  4.36s  (model, tokens, cost tracked)
+└── Span: cache_store (set)        →  0.21s
+```
+
+**Prometheus endpoint**: `GET /api/v1/metrics` exposes request latency, token usage, cache hit rates, LLM cost, and system gauges.
+
+### Optimization Results
+
+Tracing revealed **3 redundant embedding API calls per request** and bloated Langfuse payloads (500K+ characters from serialized objects). After optimization:
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| **Embedding API calls/request** | 3 | 1 | **-66%** |
+| **Embedding latency** | 3.46s | 0.48s | **-86%** |
+| **Embedding cost/request** | 3x | 1x | **-66%** |
+| **Cache store (set) latency** | 0.92s | 0.21s | **-77%** |
+| **Pipeline overhead (non-LLM)** | 5.27s | 2.10s | **-60%** |
+| **Total request latency** | 9.91s | 6.46s | **-35%** |
+
+> Measured on warm connections. Cold-start latency (first request) is higher due to TLS handshake and connection pooling.
+
+**What was fixed:**
+
+1. **Eliminated duplicate embedding in retrieval path** — Cache `get()` already embeds the query for semantic similarity; the embedding is now reused for hybrid search instead of calling the API again
+2. **Eliminated re-embedding in cache `set()`** — The query embedding from the cache lookup is passed through to `set()`, avoiding a third API call
+3. **Fixed bloated Langfuse traces** — `@observe()` on class methods was auto-serializing `self` (including API keys, OpenAI clients); now uses `capture_input=False`
+4. **Added LLM cost tracking** — Token usage and estimated cost (USD) reported to both Langfuse and Prometheus via `stream_options={"include_usage": True}`
+
+### Observability Configuration
+
+```env
+# Langfuse (get keys from https://cloud.langfuse.com)
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com
+LANGFUSE_ENABLED=true
+```
+
+Langfuse is optional — when keys are not configured, all `@observe()` decorators become transparent no-ops with zero runtime overhead.
+
+---
+
 ## Key Features
 
 ### Hybrid Search with Weighted RRF
@@ -248,7 +301,8 @@ A self-contained JavaScript widget (`widget.js`) that can be embedded on any web
 | `DELETE` | `/api/v1/documents/{id}` | Delete a document |
 | `DELETE` | `/api/v1/cache` | Clear semantic cache |
 | `GET` | `/api/v1/health` | Health check |
-| `GET` | `/api/v1/health/stats` | System statistics |
+| `GET` | `/api/v1/health/stats` | System statistics + cache stats |
+| `GET` | `/api/v1/metrics` | Prometheus metrics endpoint |
 
 ---
 
@@ -266,7 +320,8 @@ A self-contained JavaScript widget (`widget.js`) that can be embedded on any web
 | **Document Parsing** | PyPDF, python-docx, BeautifulSoup, pandas |
 | **Tokenization** | tiktoken |
 | **Orchestration** | LangChain |
-| **Monitoring** | Prometheus client |
+| **Tracing** | Langfuse (per-request traces, cost tracking) |
+| **Metrics** | Prometheus (latency histograms, token counters, cache rates) |
 | **CI** | GitHub Actions (ruff + pytest) |
 
 ---
@@ -329,6 +384,10 @@ All settings are configured via environment variables (`.env` file). See `.env.e
 | `VECTOR_WEIGHT` | `5.0` | Hybrid search vector weight |
 | `BM25_WEIGHT` | `3.0` | Hybrid search BM25 weight |
 | `CACHE_SEMANTIC_THRESHOLD` | `0.9` | Semantic cache similarity threshold |
+| `LANGFUSE_SECRET_KEY` | — | Langfuse secret key (optional) |
+| `LANGFUSE_PUBLIC_KEY` | — | Langfuse public key (optional) |
+| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse host URL |
+| `LANGFUSE_ENABLED` | `true` | Enable/disable tracing |
 
 ---
 
@@ -360,6 +419,9 @@ All settings are configured via environment variables (`.env` file). See `.env.e
 │   │   │   ├── llm_client.py        # OpenAI LLM client + streaming
 │   │   │   ├── context_builder.py   # Context assembly for prompts
 │   │   │   └── prompt_manager.py    # Prompt templates
+│   │   ├── observability/
+│   │   │   ├── tracing.py           # Langfuse setup + @observe decorator
+│   │   │   └── metrics.py           # Prometheus metrics definitions
 │   │   ├── memory/
 │   │   │   └── conversation.py      # Sliding window memory
 │   │   ├── query/
