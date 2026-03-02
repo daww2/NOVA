@@ -113,6 +113,7 @@ class EmbeddingGenerator:
         batch_size: Optional[int] = None,
         max_retries: Optional[int] = None,
         retry_delay: float = 1.0,
+        redis_client=None,
     ):
         # Use config defaults if not specified
         if model_key is None:
@@ -138,8 +139,8 @@ class EmbeddingGenerator:
         # Initialize unified EmbeddingCache (Redis default, RAM fallback)
         self._cache = cache if enable_cache else None
         if enable_cache and cache is None:
-            redis_client = None
-            if settings.cache.redis_url:
+            # Accept shared Redis client, or create own, or fall back to RAM
+            if redis_client is None and settings.cache.redis_url:
                 try:
                     import redis
                     redis_client = redis.from_url(settings.cache.redis_url, decode_responses=True)
@@ -148,6 +149,8 @@ class EmbeddingGenerator:
                 except Exception as e:
                     logger.warning("Embedding cache: Redis unavailable (%s) — using RAM", e)
                     redis_client = None
+            elif redis_client is not None:
+                logger.info("Embedding cache: using shared Redis client")
             self._cache = EmbeddingCache(
                 redis_client=redis_client,
                 max_memory_size=10000,
@@ -373,6 +376,7 @@ class EmbeddingGenerator:
 
 def create_embedding_generator(
     model_key: Optional[str] = None,
+    redis_client=None,
     **kwargs,
 ) -> EmbeddingGenerator:
     """
@@ -380,6 +384,7 @@ def create_embedding_generator(
 
     Args:
         model_key: Model identifier (defaults to config settings)
+        redis_client: Shared Redis client for embedding cache (optional)
         **kwargs: Additional arguments for EmbeddingGenerator
 
     Returns:
@@ -389,4 +394,4 @@ def create_embedding_generator(
         >>> generator = create_embedding_generator()  # Uses config
         >>> result = await generator.embed_texts(["Hello world"])
     """
-    return EmbeddingGenerator(model_key=model_key, **kwargs)
+    return EmbeddingGenerator(model_key=model_key, redis_client=redis_client, **kwargs)

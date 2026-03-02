@@ -136,7 +136,7 @@ class RetrievalEvaluator:
         ground_truth = str(query_data["ground_truth"])
 
         embedding = await self.embedding_generator.embed_query(query)
-        results: list[HybridResult] = self.hybrid_search.search(
+        results: list[HybridResult] = await self.hybrid_search.search(
             query=query,
             query_embedding=embedding,
             top_k=top_k,

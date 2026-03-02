@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
     PointStruct,
@@ -49,7 +49,7 @@ class VectorSearch:
         port: int = 6333,
         url: Optional[str] = None,
         api_key: Optional[str] = None,
-        client: Optional[QdrantClient] = None,
+        client: Optional[AsyncQdrantClient] = None,
     ):
         """
         Args:
@@ -59,16 +59,17 @@ class VectorSearch:
             port: Qdrant port (for local)
             url: Qdrant Cloud URL (if using cloud)
             api_key: Qdrant API key (if using cloud)
-            client: Existing QdrantClient to reuse (avoids duplicate connections)
+            client: Existing AsyncQdrantClient to reuse (avoids duplicate connections)
         """
         self.collection_name = collection_name
         self.dimensions = dimensions
+        self._collection_verified = False
 
         if client:
             # Reuse existing client (shared connection pool)
             self._client = client
         elif url and "cloud.qdrant.io" in url:
-            self._client = QdrantClient(
+            self._client = AsyncQdrantClient(
                 url=url,
                 api_key=api_key,
                 https=True,
@@ -76,19 +77,19 @@ class VectorSearch:
                 timeout=60,
             )
         elif url:
-            self._client = QdrantClient(url=url, api_key=api_key, timeout=60)
+            self._client = AsyncQdrantClient(url=url, api_key=api_key, timeout=60)
         else:
-            self._client = QdrantClient(host=host, port=port, timeout=60)
+            self._client = AsyncQdrantClient(host=host, port=port, timeout=60)
 
-        self._ensure_collection()
-
-    def _ensure_collection(self) -> None:
-        """Create collection if it doesn't exist."""
-        collections = self._client.get_collections().collections
+    async def _ensure_collection(self) -> None:
+        """Create collection if it doesn't exist (lazy, called once)."""
+        if self._collection_verified:
+            return
+        collections = (await self._client.get_collections()).collections
         exists = any(c.name == self.collection_name for c in collections)
 
         if not exists:
-            self._client.create_collection(
+            await self._client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(
                     size=self.dimensions,
@@ -96,8 +97,9 @@ class VectorSearch:
                 ),
             )
             logger.info(f"Created collection: {self.collection_name}")
+        self._collection_verified = True
 
-    def index(
+    async def index(
         self,
         chunks: list[dict],
         embeddings: list[list[float]],
@@ -112,6 +114,7 @@ class VectorSearch:
         Returns:
             Number of chunks indexed
         """
+        await self._ensure_collection()
         points = []
         for chunk, embedding in zip(chunks, embeddings):
             payload = {
@@ -129,7 +132,7 @@ class VectorSearch:
         batch_size = 100
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
-            self._client.upsert(
+            await self._client.upsert(
                 collection_name=self.collection_name,
                 points=batch,
             )
@@ -137,7 +140,7 @@ class VectorSearch:
         logger.info(f"Indexed {len(points)} chunks")
         return len(points)
 
-    def search(
+    async def search(
         self,
         query_embedding: list[float],
         top_k: int = 10,
@@ -154,6 +157,7 @@ class VectorSearch:
         Returns:
             List of SearchResult
         """
+        await self._ensure_collection()
         # Build filter if provided
         qdrant_filter = None
         if filter_dict:
@@ -163,7 +167,7 @@ class VectorSearch:
             ]
             qdrant_filter = Filter(must=conditions)
 
-        response = self._client.query_points(
+        response = await self._client.query_points(
             collection_name=self.collection_name,
             query=query_embedding,
             limit=top_k,
@@ -184,9 +188,9 @@ class VectorSearch:
 
         return results
 
-    def delete(self, chunk_ids: list[str]) -> int:
+    async def delete(self, chunk_ids: list[str]) -> int:
         """Delete chunks by ID."""
-        self._client.delete(
+        await self._client.delete(
             collection_name=self.collection_name,
             points_selector=chunk_ids,
         )

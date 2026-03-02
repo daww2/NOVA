@@ -180,7 +180,7 @@ async def query(
         query_embedding = await embedding_gen.embed_query(request.query)
 
     # Hybrid search
-    search_results = hybrid_search.search(
+    search_results = await hybrid_search.search(
         query=request.query,
         query_embedding=query_embedding,
         top_k=request.top_k,

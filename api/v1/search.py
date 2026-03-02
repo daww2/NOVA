@@ -29,7 +29,7 @@ async def hybrid_search(
     """Hybrid search: embed query, then RRF fusion of vector + BM25."""
     query_embedding = await embedding_gen.embed_query(request.query)
 
-    results = hybrid.search(
+    results = await hybrid.search(
         query=request.query,
         query_embedding=query_embedding,
         top_k=request.top_k,

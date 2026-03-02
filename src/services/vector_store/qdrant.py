@@ -10,7 +10,7 @@ import uuid
 from typing import Optional
 from src.config import settings
 
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, HnswConfigDiff, PointStruct, VectorParams, PointIdsList, FilterSelector, Filter, FieldCondition, MatchValue
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class QdrantStore:
         self.collection = collection
         self.dimension = dimension
         self.timeout = timeout
-        self.client: Optional[QdrantClient] = None
+        self.client: Optional[AsyncQdrantClient] = None
 
         # Map distance metric
         distance_map = {
@@ -68,7 +68,7 @@ class QdrantStore:
         """Connect to Qdrant and ensure collection exists."""
         # Qdrant Cloud uses HTTPS on port 443
         if "cloud.qdrant.io" in self.url:
-            self.client = QdrantClient(
+            self.client = AsyncQdrantClient(
                 url=self.url,
                 api_key=self.api_key,
                 https=True,
@@ -77,24 +77,24 @@ class QdrantStore:
             )
         else:
             # Local Qdrant uses HTTP on port 6333
-            self.client = QdrantClient(
+            self.client = AsyncQdrantClient(
                 url=self.url,
                 api_key=self.api_key,
                 timeout=self.timeout,
             )
 
-        self._ensure_collection()
+        await self._ensure_collection()
         logger.info(f"QdrantStore connected: {self.collection}")
 
-    def _ensure_collection(self):
+    async def _ensure_collection(self):
         """Create collection if it doesn't exist."""
         if not self.client:
             raise RuntimeError("Not connected. Call connect() first.")
 
-        collections = [c.name for c in self.client.get_collections().collections]
+        collections = [c.name for c in (await self.client.get_collections()).collections]
 
         if self.collection not in collections:
-            self.client.create_collection(
+            await self.client.create_collection(
                 collection_name=self.collection,
                 vectors_config=VectorParams(
                     size=self.dimension,
@@ -118,7 +118,7 @@ class QdrantStore:
             raise RuntimeError("Not connected. Call connect() first.")
 
         # Ensure collection exists (handles case where collection was deleted)
-        self._ensure_collection()
+        await self._ensure_collection()
 
         metadata = metadata or [{} for _ in ids]
 
@@ -134,7 +134,7 @@ class QdrantStore:
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
             logger.info(f"Upserting batch {i//batch_size + 1}/{(len(points)-1)//batch_size + 1}...")
-            self.client.upsert(collection_name=self.collection, points=batch)
+            await self.client.upsert(collection_name=self.collection, points=batch)
             total += len(batch)
 
         logger.info(f"Upserted {total} vectors to {self.collection}")
@@ -151,10 +151,10 @@ class QdrantStore:
             raise RuntimeError("Not connected. Call connect() first.")
 
         # Ensure collection exists (handles case where collection was deleted)
-        self._ensure_collection()
+        await self._ensure_collection()
 
         # Use query_points for newer qdrant-client versions
-        results = self.client.query_points(
+        results = await self.client.query_points(
             collection_name=self.collection,
             query=query_embedding,
             limit=top_k,
@@ -185,7 +185,7 @@ class QdrantStore:
         if ids:
             # Convert string IDs to UUIDs
             qdrant_ids = [string_to_uuid(id_) for id_ in ids]
-            self.client.delete(
+            await self.client.delete(
                 collection_name=self.collection,
                 points_selector=PointIdsList(points=qdrant_ids),
             )
@@ -199,7 +199,7 @@ class QdrantStore:
                     FieldCondition(key=key, match=MatchValue(value=value))
                 )
             qdrant_filter = Filter(must=conditions)
-            self.client.delete(
+            await self.client.delete(
                 collection_name=self.collection,
                 points_selector=FilterSelector(filter=qdrant_filter),
             )
@@ -208,16 +208,16 @@ class QdrantStore:
     async def close(self):
         """Close the client connection."""
         if self.client:
-            self.client.close()
+            await self.client.close()
             self.client = None
             logger.info("QdrantStore connection closed")
 
-    def stats(self) -> dict:
+    async def stats(self) -> dict:
         """Get collection statistics."""
         if not self.client:
             raise RuntimeError("Not connected. Call connect() first.")
 
-        info = self.client.get_collection(self.collection)
+        info = await self.client.get_collection(self.collection)
         return {
             "points_count": info.points_count,
             "status": info.status.name if hasattr(info.status, 'name') else str(info.status),
@@ -237,7 +237,7 @@ class QdrantStore:
         offset = None
 
         while True:
-            results, offset = self.client.scroll(
+            results, offset = await self.client.scroll(
                 collection_name=self.collection,
                 limit=batch_size,
                 offset=offset,

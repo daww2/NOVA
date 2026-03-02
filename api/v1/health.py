@@ -45,7 +45,7 @@ async def health_stats(
     semantic_cache: SemanticCache | None = Depends(get_semantic_cache),
 ):
     """Detailed system statistics."""
-    qdrant_stats = qdrant_store.stats()
+    qdrant_stats = await qdrant_store.stats()
 
     # Update gauges on each stats call
     bm25_size = bm25_search.size

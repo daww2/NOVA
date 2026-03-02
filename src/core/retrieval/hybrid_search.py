@@ -80,7 +80,7 @@ class HybridSearch:
         )
 
     @observe(capture_input=False, capture_output=False)
-    def search(
+    async def search(
         self,
         query: str,
         query_embedding: list[float],
@@ -96,7 +96,7 @@ class HybridSearch:
         start = time.perf_counter()
 
         # Step 1: Get top candidates from vector search
-        vector_results = self.vector_search.search(
+        vector_results = await self.vector_search.search(
             query_embedding=query_embedding,
             top_k=self.retrieval_k,
             filter_dict=filter_dict,
