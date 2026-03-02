@@ -1,7 +1,7 @@
 """Tests for HybridSearch — RRF fusion logic."""
 
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from src.core.retrieval.hybrid_search import HybridSearch
@@ -19,7 +19,7 @@ class FakeVectorResult:
 
 @pytest.fixture
 def hybrid():
-    vector_search = MagicMock()
+    vector_search = AsyncMock()
     bm25_search = MagicMock()
 
     vector_search.search.return_value = [
@@ -39,42 +39,49 @@ def hybrid():
 
 class TestRRFFusion:
 
-    def test_returns_results(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=10)
+    @pytest.mark.asyncio
+    async def test_returns_results(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=10)
         assert len(results) > 0
 
-    def test_results_sorted_by_score(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=10)
+    @pytest.mark.asyncio
+    async def test_results_sorted_by_score(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=10)
         scores = [r.score for r in results]
         assert scores == sorted(scores, reverse=True)
 
-    def test_union_of_both_sources(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=10)
+    @pytest.mark.asyncio
+    async def test_union_of_both_sources(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=10)
         ids = {r.chunk_id for r in results}
         # c1, c2, c3 from vector; c2, c4, c1 from bm25 → union = {c1, c2, c3, c4}
         assert ids == {"c1", "c2", "c3", "c4"}
 
-    def test_chunk_in_both_has_higher_score(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=10)
+    @pytest.mark.asyncio
+    async def test_chunk_in_both_has_higher_score(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=10)
         result_map = {r.chunk_id: r for r in results}
         # c2 appears in both vector (rank 1) and bm25 (rank 0), should have high score
         # c3 appears only in vector (rank 2)
         assert result_map["c2"].score > result_map["c3"].score
 
-    def test_from_vector_flag(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=10)
+    @pytest.mark.asyncio
+    async def test_from_vector_flag(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=10)
         result_map = {r.chunk_id: r for r in results}
         assert result_map["c1"].from_vector is True
         assert result_map["c4"].from_vector is False
 
-    def test_from_bm25_flag(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=10)
+    @pytest.mark.asyncio
+    async def test_from_bm25_flag(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=10)
         result_map = {r.chunk_id: r for r in results}
         assert result_map["c2"].from_bm25 is True
         assert result_map["c3"].from_bm25 is False
 
-    def test_respects_top_k(self, hybrid):
-        results = hybrid.search("test query", [0.1, 0.2], top_k=2)
+    @pytest.mark.asyncio
+    async def test_respects_top_k(self, hybrid):
+        results = await hybrid.search("test query", [0.1, 0.2], top_k=2)
         assert len(results) == 2
 
 

@@ -80,7 +80,7 @@ class GenerationEvaluator:
         embedding = await self.embedding_generator.embed_query(query)
 
         # 2. Hybrid search
-        results = self.hybrid_search.search(
+        results = await self.hybrid_search.search(
             query=query,
             query_embedding=embedding,
             top_k=10,

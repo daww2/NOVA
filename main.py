@@ -53,6 +53,18 @@ async def lifespan(app: FastAPI):
     if langfuse_client:
         logger.info("Langfuse tracing active")
 
+    # --- Shared Redis Client (single connection pool for all caches) ---
+    redis_client = None
+    if settings.cache.redis_url:
+        try:
+            import redis
+            redis_client = redis.from_url(settings.cache.redis_url, decode_responses=True)
+            redis_client.ping()
+            logger.info("Shared Redis client connected")
+        except Exception as e:
+            logger.warning("Redis unavailable (%s) — caches will use RAM", e)
+            redis_client = None
+
     # --- Qdrant Store ---
     qdrant_store = QdrantStore(
         url=settings.qdrant.qdrant_url,
@@ -62,8 +74,8 @@ async def lifespan(app: FastAPI):
     )
     await qdrant_store.connect()
 
-    # --- Embedding Generator ---
-    embedding_generator = create_embedding_generator()
+    # --- Embedding Generator (shares Redis client) ---
+    embedding_generator = create_embedding_generator(redis_client=redis_client)
 
     # --- Vector Search (reuse Qdrant client — shared connection pool) ---
     vector_search = VectorSearch(
@@ -119,10 +131,13 @@ async def lifespan(app: FastAPI):
     # --- Conversation Memory ---
     conversation_memory = ConversationMemory()
 
-    # --- Semantic Cache (shares embedding generator's OpenAI connection) ---
+    # --- Semantic Cache (shares embedding generator's OpenAI connection + Redis client) ---
     semantic_cache = None
     if settings.cache.semantic_cache_enabled:
-        semantic_cache = SemanticCache(embedding_generator=embedding_generator)
+        semantic_cache = SemanticCache(
+            embedding_generator=embedding_generator,
+            redis_client=redis_client,
+        )
         logger.info("Semantic cache enabled")
 
     # --- Upload directory ---
@@ -148,6 +163,20 @@ async def lifespan(app: FastAPI):
     METRICS.ACTIVE_SESSIONS.set(0)
     if semantic_cache:
         METRICS.CACHE_ENTRIES.set(len(semantic_cache._memory_cache))
+
+    # --- Connection Warmup (eliminates cold-start latency on first request) ---
+    try:
+        logger.info("Warming up connections...")
+        await embedding_generator.embed_query("warmup")
+        logger.info("OpenAI embedding connection warmed")
+    except Exception as e:
+        logger.warning("Embedding warmup failed (non-fatal): %s", e)
+
+    try:
+        await llm_client.generate("Say OK", max_tokens=3)
+        logger.info("OpenAI LLM connection warmed")
+    except Exception as e:
+        logger.warning("LLM warmup failed (non-fatal): %s", e)
 
     logger.info("All services initialized successfully")
 

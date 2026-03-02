@@ -65,7 +65,7 @@ class SemanticCache:
         await cache.set(query, response)
     """
 
-    def __init__(self, embedding_generator=None):
+    def __init__(self, embedding_generator=None, redis_client=None):
         # Config
         self.similarity_threshold = settings.cache.semantic_cache_threshold
         self.rerank_threshold = settings.cache.rerank_threshold
@@ -77,10 +77,14 @@ class SemanticCache:
         self._embedding_generator = embedding_generator or create_embedding_generator()
         self._embed_func = self._embedding_generator.embed_query
 
-        # Redis (default) with RAM fallback
+        # Redis: accept shared client, or create own, or fall back to RAM
         self.redis = None
         self._using_redis = False
-        if settings.cache.redis_url:
+        if redis_client is not None:
+            self.redis = redis_client
+            self._using_redis = True
+            logger.info("Semantic cache: using shared Redis client")
+        elif settings.cache.redis_url:
             try:
                 self.redis = redis.from_url(settings.cache.redis_url, decode_responses=True)
                 self.redis.ping()
