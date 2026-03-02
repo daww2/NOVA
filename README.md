@@ -3,8 +3,6 @@
 A production-ready Retrieval-Augmented Generation (RAG) system focused on **hybrid retrieval, measurable quality improvements, and low-latency performance**.
 Designed with evaluation-driven iteration and production best practices.
 
-https://github.com/user-attachments/assets/52be09e1-a78a-4b5e-b500-c3874187c742
-
 ---
 
 # ✨ Key Features
