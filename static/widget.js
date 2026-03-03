@@ -502,7 +502,7 @@
 
     function addBotMessage(text) {
       const body = createBotWrapper();
-      body.innerHTML = renderMarkdown(text);
+      body.innerHTML = renderMarkdown(text); 
       scrollDown();
       return body;
     }
