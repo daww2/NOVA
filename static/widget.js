@@ -10,9 +10,9 @@
     primaryColor: "#6366f1",
     greeting: "Hello!",
     suggestions: [
-      "What does Acme Corp do?",
-      "Tell me about pricing",
-      "How do I get started?",
+      "What are your best security products?",
+      "Do you have any active discounts?",
+      "What's included in the Business Essentials Bundle?",
     ],
     historyTTL: 24 * 60 * 60 * 1000,
   };
