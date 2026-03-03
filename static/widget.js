@@ -10,9 +10,9 @@
     primaryColor: "#6366f1",
     greeting: "Hello!",
     suggestions: [
-      "What does Acme Corp do?",
-      "Tell me about pricing",
-      "How do I get started?",
+      "What are your best security products?",
+      "Do you have any active discounts?",
+      "What's included in the Business Essentials Bundle?",
     ],
     historyTTL: 24 * 60 * 60 * 1000,
   };
@@ -279,22 +279,24 @@
         flex-shrink: 0;
         border-top: 1px solid #f0f0f0;
         background: #fff;
+        margin-top: 40px;
       }
       .rag-suggestion-item {
-        display: flex; align-items: center; gap: 12px;
-        padding: 14px 20px;
-        border: none; background: none;
+        display: flex !important; align-items: center !important; gap: 20px !important;
+        padding: 14px 20px 14px 36px !important;
+        margin: 0 !important;
+        border: none !important; background: none;
+        border-bottom: 1px solid #e8e8e8 !important;
         width: 100%; text-align: left;
         cursor: pointer;
         font-family: 'Inter', sans-serif;
         font-size: 14px; color: #1a1a1a;
         transition: background .15s;
-        border-bottom: 1px solid #f5f5f5;
       }
-      .rag-suggestion-item:last-child { border-bottom: none; }
+      .rag-suggestion-item:last-child { border-bottom: none !important; }
       .rag-suggestion-item:hover { background: #faf8ff; }
       .rag-suggestion-item svg {
-        width: 18px; height: 18px; color: #673ab7;
+        width: 24px !important; height: 24px !important; color: #000 !important;
         flex-shrink: 0;
       }
 
@@ -502,7 +504,7 @@
 
     function addBotMessage(text) {
       const body = createBotWrapper();
-      body.innerHTML = renderMarkdown(text);
+      body.innerHTML = renderMarkdown(text); 
       scrollDown();
       return body;
     }
