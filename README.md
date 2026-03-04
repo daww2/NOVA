@@ -115,7 +115,6 @@ A lightweight semantic cache is implemented to reduce repeated computation and i
 * Configurable scope (global/session)
 * Bypasses retrieval and generation on hit
 
-Caching is treated as an optimization layer and does not influence retrieval evaluation metrics.
 
 ---
 
